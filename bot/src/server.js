@@ -1,9 +1,15 @@
 import 'dotenv/config';
 import express from 'express';
 import twilio from 'twilio';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { handleIncoming, handleOwnerMessage } from './brain.js';
 import { parseIncoming, sendText } from './uazapi.js';
-import { setTakeover, clearTakeover } from './store.js';
+import { setTakeover, clearTakeover, addKbEntry, listKb, deleteKbEntry } from './store.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const adminPage = readFileSync(path.join(__dirname, 'admin.html'), 'utf8');
 
 const app = express();
 app.use(express.json());
@@ -59,21 +65,31 @@ app.post('/webhook/twilio', twilioSignatureGuard, async (req, res) => {
       return res.send('<Response></Response>');
     }
 
-    // Owner takeover commands via SMS: "/assumir +1XXXXXXXXXX" / "/voltar +1XXXXXXXXXX"
+    // Owner commands via SMS: "/assumir +1XXX" / "/voltar +1XXX" / "/ensinar <tipo> <texto>"
     const ownerDigits = (process.env.OWNER_SMS_NUMBER || '').replace(/\D/g, '');
     if (ownerDigits && from.replace(/\D/g, '') === ownerDigits && body.startsWith('/')) {
-      const match = body.match(/^\/(assumir|voltar|takeover|resume)\b\s*(\+?[\d][\d\s()-]*)?/i);
-      const cmd = match?.[1]?.toLowerCase();
-      const target = match?.[2] ? `+${match[2].replace(/\D/g, '')}` : null;
       let answer;
-      if (!cmd || !target) {
-        answer = 'Usage: /assumir +1XXXXXXXXXX or /voltar +1XXXXXXXXXX';
-      } else if (cmd === 'assumir' || cmd === 'takeover') {
-        await setTakeover('sms', target);
-        answer = `OK — AI paused for ${target}. You have control. /voltar ${target} to resume.`;
+
+      // /ensinar <fato|faq|estilo|correcao> <texto> — teach the AI from SMS
+      const teach = body.match(/^\/ensinar\s+(\S+)\s+([\s\S]+)/i);
+      if (teach) {
+        const catMap = { fato: 'business', faq: 'faq', estilo: 'style', correcao: 'correction' };
+        const category = catMap[teach[1].toLowerCase()] || 'business';
+        const entry = await addKbEntry({ category, text: teach[2], source: 'sms' });
+        answer = `Saved ✓ AI now knows this (#${entry.id.slice(-4)}, ${category}). It applies to all conversations immediately.`;
       } else {
-        await clearTakeover('sms', target);
-        answer = `OK — AI resumed for ${target}.`;
+        const match = body.match(/^\/(assumir|voltar|takeover|resume)\b\s*(\+?[\d][\d\s()-]*)?/i);
+        const cmd = match?.[1]?.toLowerCase();
+        const target = match?.[2] ? `+${match[2].replace(/\D/g, '')}` : null;
+        if (!cmd || !target) {
+          answer = 'Commands: /assumir +1XXX, /voltar +1XXX, /ensinar <fato|faq|estilo|correcao> <text>';
+        } else if (cmd === 'assumir' || cmd === 'takeover') {
+          await setTakeover('sms', target);
+          answer = `OK — AI paused for ${target}. You have control. /voltar ${target} to resume.`;
+        } else {
+          await clearTakeover('sms', target);
+          answer = `OK — AI resumed for ${target}.`;
+        }
       }
       return res.send(`<Response><Message>${xmlEscape(answer)}</Message></Response>`);
     }
@@ -132,6 +148,38 @@ app.post('/webhook/uazapi', async (req, res) => {
   } catch (err) {
     console.error('[uazapi webhook] error:', err);
   }
+});
+
+// --- Admin: living knowledge base (/admin) ------------------------------------
+function adminGuard(req, res, next) {
+  const token = process.env.ADMIN_TOKEN;
+  if (!token) return res.status(503).send('ADMIN_TOKEN not configured');
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== token) return res.status(401).json({ error: 'invalid admin key' });
+  next();
+}
+
+app.get('/admin', (req, res) => {
+  res.set('Content-Type', 'text/html');
+  res.send(adminPage);
+});
+
+app.get('/api/kb', adminGuard, async (req, res) => {
+  res.json(await listKb());
+});
+
+app.post('/api/kb', adminGuard, async (req, res) => {
+  const { category, text } = req.body || {};
+  if (!text || !String(text).trim()) {
+    return res.status(400).json({ error: 'text is required' });
+  }
+  const entry = await addKbEntry({ category, text, source: 'admin-page' });
+  res.status(201).json(entry);
+});
+
+app.delete('/api/kb/:id', adminGuard, async (req, res) => {
+  await deleteKbEntry(req.params.id);
+  res.json({ ok: true });
 });
 
 // Error handler — last line of defense, never crash the process.

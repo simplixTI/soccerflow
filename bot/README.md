@@ -77,6 +77,26 @@ by design.
   `TWILIO_VALIDATE_SIGNATURE=false` for local dev).
 - `POST /webhook/uazapi` — uazapi WhatsApp webhook (tolerant payload parser).
 
+## Teaching the AI (living knowledge base)
+
+Beyond `business.json`, the owner can keep feeding the AI new knowledge that
+applies immediately to all conversations — no code, no redeploy:
+
+- **Admin page**: open `https://<bot-host>/admin`, paste the `ADMIN_TOKEN`,
+  and add entries in 4 categories:
+  - `business` — new facts (prices, schedule changes, parking, policies)
+  - `faq` — frequent question + ideal answer
+  - `style` — how the AI should talk/behave
+  - `correction` — "when asked X, answer Y" fixes from real conversations
+- **SMS**: the owner can also text the Twilio number:
+  `/ensinar <fato|faq|estilo|correcao> <text>`
+
+Entries are stored in `data/db.json` and injected into every prompt as
+"TEAM TEACHINGS", which refine and can override the base knowledge. Delete
+wrong entries anytime from the admin page. Note: the db file lives on the
+server's disk — on Render's free tier it resets when the service redeploys,
+so anything important should also go into `business.json` eventually.
+
 ## Human takeover (/assumir)
 
 The owner can pull the AI out of any conversation and take over manually:

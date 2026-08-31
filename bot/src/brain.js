@@ -11,6 +11,7 @@ import {
   isTakeover,
   setTakeover,
   clearTakeover,
+  getKbPromptSection,
 } from './store.js';
 import { notifyOwner } from './notify.js';
 
@@ -24,7 +25,7 @@ const FALLBACK_REPLY =
   'the coach will get back to you shortly. You can also call us at ' +
   (business.phone || 'our number') + '.';
 
-function buildSystemPrompt(lead) {
+function buildSystemPrompt(lead, kbSection) {
   const knownLead = lead
     ? `RETURNING CONTACT — already collected from this family: ${JSON.stringify({
         parentName: lead.parentName,
@@ -36,10 +37,14 @@ function buildSystemPrompt(lead) {
       })}. Do NOT re-ask fields already collected.`
     : 'New contact — nothing known about this family yet.';
 
+  const extraKnowledge = kbSection
+    ? `\n\nTEAM TEACHINGS (added over time by the Soccer Flow team — authoritative; they refine and may override the base knowledge above):\n${kbSection}`
+    : '';
+
   return `You are the first-contact assistant for "${business['01_company'].name}", a youth soccer program in ${business['01_company'].city}. You reply on SMS/WhatsApp as a friendly member of the Soccer Flow team — natural, warm and human, never like a corporate bot.
 
 KNOWLEDGE BASE (your only source of truth — never go beyond it):
-${JSON.stringify(business, null, 2)}
+${JSON.stringify(business, null, 2)}${extraKnowledge}
 
 BEHAVIOR RULES:
 - LANGUAGE: mirror the customer's language — English, Spanish or Portuguese. Default English. Never switch unless the customer does.
@@ -79,9 +84,10 @@ export async function handleIncoming({ channel, phone, text }) {
 
     const existingLead = await findLead(channel, phone);
     const history = await getHistory(channel, phone);
+    const kbSection = await getKbPromptSection();
 
     const result = await chat({
-      systemPrompt: buildSystemPrompt(existingLead),
+      systemPrompt: buildSystemPrompt(existingLead, kbSection),
       messages: [...history, { role: 'user', content: text }],
     });
 
