@@ -17,7 +17,9 @@ function digits(phone) {
 }
 
 /**
- * Extract { phone, text } from an incoming uazapi webhook payload.
+ * Extract { phone, text, fromMe } from an incoming uazapi webhook payload.
+ * fromMe=true marks messages sent by the business number itself (owner typing in the chat,
+ * e.g. the /assumir takeover command, or the bot's own API replies).
  * Returns null when the payload should be ignored.
  */
 export function parseIncoming(body) {
@@ -25,10 +27,6 @@ export function parseIncoming(body) {
 
   // Common nesting levels used by Baileys-style APIs.
   const msg = body.message || body.data?.message || body.data || body;
-
-  // Ignore echoes of our own messages.
-  const fromMe = msg.fromMe ?? msg.key?.fromMe ?? body.fromMe;
-  if (fromMe) return null;
 
   // Sender / chat identifiers seen in the wild.
   const rawFrom =
@@ -44,6 +42,8 @@ export function parseIncoming(body) {
   if (chatType === 'group') return null;
   if (msg.isGroup || body.isGroup) return null;
 
+  const fromMe = Boolean(msg.fromMe ?? msg.key?.fromMe ?? body.fromMe);
+
   // Text extraction across common shapes.
   const text =
     msg.text || msg.body || msg.caption || msg.message ||
@@ -56,7 +56,7 @@ export function parseIncoming(body) {
   const phone = digits(rawFrom.split('@')[0]);
   if (!phone) return null;
 
-  return { phone, text: text.trim() };
+  return { phone, text: text.trim(), fromMe };
 }
 
 /**

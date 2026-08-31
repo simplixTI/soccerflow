@@ -9,13 +9,14 @@ const dataDir = path.join(__dirname, '..', 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 
 const adapter = new JSONFile(path.join(dataDir, 'db.json'));
-const defaultData = { conversations: {}, leads: [] };
+const defaultData = { conversations: {}, leads: [], takeovers: {} };
 const db = new Low(adapter, defaultData);
 
 await db.read();
 db.data ||= defaultData;
 db.data.conversations ||= {};
 db.data.leads ||= [];
+db.data.takeovers ||= {};
 
 const MAX_HISTORY = 20;
 const convKey = (channel, phone) => `${channel}:${phone}`;
@@ -83,4 +84,27 @@ export async function markLeadNotified(channel, phone) {
     lead.updatedAt = new Date().toISOString();
     await db.write();
   }
+}
+
+// --- Human takeover (/assumir) ------------------------------------------------
+
+/** Owner takes over a conversation: the AI goes silent for this channel+phone. */
+export async function setTakeover(channel, phone, by = 'owner') {
+  await db.read();
+  db.data.takeovers[convKey(channel, phone)] = { by, at: new Date().toISOString() };
+  await db.write();
+}
+
+/** AI resumes control of the conversation. */
+export async function clearTakeover(channel, phone) {
+  await db.read();
+  if (db.data.takeovers[convKey(channel, phone)]) {
+    delete db.data.takeovers[convKey(channel, phone)];
+    await db.write();
+  }
+}
+
+export async function isTakeover(channel, phone) {
+  await db.read();
+  return Boolean(db.data.takeovers[convKey(channel, phone)]);
 }

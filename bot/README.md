@@ -76,3 +76,21 @@ by design.
 - `POST /webhook/twilio` — Twilio SMS webhook (signature-validated; set
   `TWILIO_VALIDATE_SIGNATURE=false` for local dev).
 - `POST /webhook/uazapi` — uazapi WhatsApp webhook (tolerant payload parser).
+
+## Human takeover (/assumir)
+
+The owner can pull the AI out of any conversation and take over manually:
+
+- **WhatsApp**: type `/assumir` directly in the customer chat (from the connected
+  business number). The bot confirms in the chat and goes silent — customer messages
+  are still recorded, and everything the owner types is saved as context.
+  Type `/voltar` to hand the conversation back to the AI, which resumes with
+  full context of what was said.
+- **SMS**: text the Twilio number from the owner's phone:
+  `/assumir +1XXXXXXXXXX` to pause the AI for that customer,
+  `/voltar +1XXXXXXXXXX` to resume. English aliases `/takeover` and `/resume`
+  also work on both channels.
+
+Note: the `/assumir` command message itself is visible to the customer (it is sent
+from the business number), which is why the bot immediately follows it with
+"You're now chatting directly with the Soccer Flow team".

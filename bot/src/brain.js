@@ -8,6 +8,9 @@ import {
   findLead,
   upsertLead,
   markLeadNotified,
+  isTakeover,
+  setTakeover,
+  clearTakeover,
 } from './store.js';
 import { notifyOwner } from './notify.js';
 
@@ -61,10 +64,19 @@ OUTPUT FORMAT: respond with STRICT JSON only, no markdown, no extra text:
 
 /**
  * Shared conversation logic used by both SMS and WhatsApp channels.
- * Returns the reply text to send back to the parent. Never throws.
+ * Returns the reply text to send back to the parent, or null when the bot
+ * must stay silent (human takeover active). Never throws.
  */
 export async function handleIncoming({ channel, phone, text }) {
   try {
+    // Human takeover: the owner is handling this conversation manually.
+    // Record the parent's message for context but stay silent.
+    if (await isTakeover(channel, phone)) {
+      await appendMessages(channel, phone, [{ role: 'user', content: text }]);
+      console.log(`[brain] takeover active for ${channel}:${phone} — staying silent`);
+      return null;
+    }
+
     const existingLead = await findLead(channel, phone);
     const history = await getHistory(channel, phone);
 
@@ -102,5 +114,48 @@ export async function handleIncoming({ channel, phone, text }) {
   } catch (err) {
     console.error(`[brain] error handling ${channel}:${phone}:`, err.message);
     return FALLBACK_REPLY;
+  }
+}
+
+const TAKEOVER_REPLY =
+  "You're now chatting directly with the Soccer Flow team ⚽ We'll take it from here!";
+const RESUME_REPLY =
+  'Thanks for your patience! Our assistant is back and happy to help ⚽';
+
+/**
+ * Handle a message sent BY the business number itself (owner typing in the
+ * customer chat, delivered via the uazapi fromMe webhook).
+ *
+ * Commands:
+ *   /assumir — owner takes over; the AI goes silent in this conversation
+ *   /voltar  — AI resumes control
+ *
+ * Returns a customer-facing message to send into the chat, or null.
+ * While takeover is active, non-command owner messages are recorded as
+ * assistant messages so the AI has full context when it resumes.
+ */
+export async function handleOwnerMessage({ channel, phone, text }) {
+  try {
+    const cmd = text.trim().toLowerCase();
+    if (cmd === '/assumir' || cmd === '/takeover') {
+      await setTakeover(channel, phone);
+      console.log(`[brain] takeover ON for ${channel}:${phone}`);
+      return TAKEOVER_REPLY;
+    }
+    if (cmd === '/voltar' || cmd === '/resume') {
+      await clearTakeover(channel, phone);
+      console.log(`[brain] takeover OFF for ${channel}:${phone}`);
+      return RESUME_REPLY;
+    }
+    // Not a command. If takeover is active, this is the owner talking to the
+    // customer — record it as an assistant message for AI context. Otherwise
+    // it's an echo of the bot's own API reply: ignore.
+    if (await isTakeover(channel, phone)) {
+      await appendMessages(channel, phone, [{ role: 'assistant', content: text }]);
+    }
+    return null;
+  } catch (err) {
+    console.error(`[brain] error handling owner message for ${channel}:${phone}:`, err.message);
+    return null;
   }
 }

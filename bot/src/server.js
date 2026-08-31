@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import express from 'express';
 import twilio from 'twilio';
-import { handleIncoming } from './brain.js';
+import { handleIncoming, handleOwnerMessage } from './brain.js';
 import { parseIncoming, sendText } from './uazapi.js';
+import { setTakeover, clearTakeover } from './store.js';
 
 const app = express();
 app.use(express.json());
@@ -53,12 +54,34 @@ app.post('/webhook/twilio', twilioSignatureGuard, async (req, res) => {
   try {
     const from = req.body.From;
     const body = (req.body.Body || '').trim();
+    res.set('Content-Type', 'text/xml');
     if (!from || !body) {
-      res.set('Content-Type', 'text/xml');
       return res.send('<Response></Response>');
     }
+
+    // Owner takeover commands via SMS: "/assumir +1XXXXXXXXXX" / "/voltar +1XXXXXXXXXX"
+    const ownerDigits = (process.env.OWNER_SMS_NUMBER || '').replace(/\D/g, '');
+    if (ownerDigits && from.replace(/\D/g, '') === ownerDigits && body.startsWith('/')) {
+      const match = body.match(/^\/(assumir|voltar|takeover|resume)\b\s*(\+?[\d][\d\s()-]*)?/i);
+      const cmd = match?.[1]?.toLowerCase();
+      const target = match?.[2] ? `+${match[2].replace(/\D/g, '')}` : null;
+      let answer;
+      if (!cmd || !target) {
+        answer = 'Usage: /assumir +1XXXXXXXXXX or /voltar +1XXXXXXXXXX';
+      } else if (cmd === 'assumir' || cmd === 'takeover') {
+        await setTakeover('sms', target);
+        answer = `OK — AI paused for ${target}. You have control. /voltar ${target} to resume.`;
+      } else {
+        await clearTakeover('sms', target);
+        answer = `OK — AI resumed for ${target}.`;
+      }
+      return res.send(`<Response><Message>${xmlEscape(answer)}</Message></Response>`);
+    }
+
     const reply = await handleIncoming({ channel: 'sms', phone: from, text: body });
-    res.set('Content-Type', 'text/xml');
+    if (reply == null) {
+      return res.send('<Response></Response>'); // takeover active: stay silent
+    }
     res.send(`<Response><Message>${xmlEscape(reply)}</Message></Response>`);
   } catch (err) {
     console.error('[twilio webhook] error:', err);
@@ -77,11 +100,30 @@ app.post('/webhook/uazapi', async (req, res) => {
       console.log('[uazapi webhook] ignored payload:', JSON.stringify(req.body).slice(0, 500));
       return;
     }
+
+    // Message sent by the business number itself (owner typing in the chat).
+    if (incoming.fromMe) {
+      const ownerReply = await handleOwnerMessage({
+        channel: 'whatsapp',
+        phone: incoming.phone,
+        text: incoming.text,
+      });
+      if (ownerReply) {
+        try {
+          await sendText(incoming.phone, ownerReply);
+        } catch (err) {
+          console.error('[uazapi webhook] failed to send owner-command reply:', err.message);
+        }
+      }
+      return;
+    }
+
     const reply = await handleIncoming({
       channel: 'whatsapp',
       phone: incoming.phone,
       text: incoming.text,
     });
+    if (reply == null) return; // takeover active: stay silent
     try {
       await sendText(incoming.phone, reply);
     } catch (err) {
