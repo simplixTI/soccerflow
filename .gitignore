@@ -5,3 +5,5 @@ data/
 *.log
 .DS_Store
 Thumbs.db
+whatsapp-qrcode.png
+qr2.json
