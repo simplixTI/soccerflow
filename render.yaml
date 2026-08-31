@@ -1,0 +1,35 @@
+# Render Blueprint — one-click deploy for the Soccer Flow bot.
+# Usage: Render dashboard → New → Blueprint → pick the simplixTI/soccerflow repo.
+# Secrets marked `sync: false` must be pasted in the Render dashboard when prompted.
+services:
+  - type: web
+    name: soccerflow-bot
+    runtime: node
+    plan: free
+    rootDir: bot
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+      - key: UAZAPI_BASE_URL
+        value: https://soccerflow.uazapi.com
+      - key: UAZAPI_TOKEN
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        value: "+18584454126"
+      - key: TWILIO_VALIDATE_SIGNATURE
+        value: "true"
+      - key: OWNER_WHATSAPP_NUMBER
+        sync: false
+      - key: OWNER_SMS_NUMBER
+        sync: false
