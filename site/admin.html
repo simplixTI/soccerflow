@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Soccer Flow — Ensinar a IA</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      background: #0d1b2a; color: #e8f0e8; min-height: 100vh; padding: 24px 16px;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    h1 { color: #7dd89a; font-size: 1.4rem; margin-bottom: 4px; }
+    .sub { color: #9db8a5; font-size: .9rem; margin-bottom: 20px; }
+    .card {
+      background: #14263a; border: 1px solid #1f3a52; border-radius: 12px;
+      padding: 16px; margin-bottom: 20px;
+    }
+    label { display: block; font-size: .85rem; color: #9db8a5; margin-bottom: 6px; }
+    select, textarea, input {
+      width: 100%; background: #0d1b2a; color: #e8f0e8;
+      border: 1px solid #2a4a66; border-radius: 8px; padding: 10px;
+      font-size: 1rem; margin-bottom: 12px;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    button {
+      background: #1d9a50; color: #fff; border: 0; border-radius: 8px;
+      padding: 12px 20px; font-size: 1rem; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #23b45c; }
+    button.del { background: none; color: #e06c6c; font-size: .8rem; padding: 4px 8px; }
+    .entry {
+      background: #0d1b2a; border-radius: 8px; padding: 12px; margin-bottom: 10px;
+      display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;
+    }
+    .entry .tag {
+      font-size: .7rem; text-transform: uppercase; letter-spacing: .05em;
+      color: #ffce73; display: block; margin-bottom: 4px;
+    }
+    .entry p { font-size: .92rem; line-height: 1.45; }
+    .entry small { color: #6f8a7a; display: block; margin-top: 4px; font-size: .72rem; }
+    .hint { color: #6f8a7a; font-size: .8rem; margin-top: 8px; }
+    #status { color: #7dd89a; font-size: .85rem; margin-top: 10px; min-height: 1.2em; }
+    .error { color: #e06c6c !important; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>⚽ Ensinar a IA — Soccer Flow</h1>
+    <p class="sub">Tudo que você adicionar aqui entra no cérebro da IA na hora e passa a valer em todas as conversas.</p>
+
+    <div class="card">
+      <label for="key">Senha de acesso</label>
+      <input id="key" type="password" placeholder="Cole a senha aqui" autocomplete="off">
+    </div>
+
+    <div class="card">
+      <label for="category">Tipo de conhecimento</label>
+      <select id="category">
+        <option value="business">Fato do negócio (horário, preço, regra nova...)</option>
+        <option value="faq">Pergunta frequente + resposta</option>
+        <option value="style">Estilo de atendimento (como a IA deve falar/agir)</option>
+        <option value="correction">Correção (quando perguntarem X, responda Y)</option>
+      </select>
+      <label for="text">Texto</label>
+      <textarea id="text" placeholder="Ex: When a parent asks about parking, tell them there's free parking right next to the field at Liberty Station."></textarea>
+      <button id="add">Adicionar conhecimento</button>
+      <div id="status"></div>
+      <p class="hint">Dica: escreva em inglês de preferência, ou em português mesmo — a IA entende e usa em qualquer idioma.</p>
+    </div>
+
+    <div class="card">
+      <label>Conhecimentos atuais</label>
+      <div id="list"><p class="hint">Carregando…</p></div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'https://fkndtjpkrjtxftaawrxz.supabase.co/functions/v1/admin/api/kb';
+    const $ = (id) => document.getElementById(id);
+    const keyInput = $('key');
+    keyInput.value = localStorage.getItem('sf_admin_key') || '';
+    keyInput.addEventListener('change', () => {
+      localStorage.setItem('sf_admin_key', keyInput.value);
+      loadEntries();
+    });
+
+    function headers() {
+      return { 'Content-Type': 'application/json', 'x-admin-key': keyInput.value };
+    }
+
+    function status(msg, isError) {
+      const el = $('status');
+      el.textContent = msg;
+      el.className = isError ? 'error' : '';
+      setTimeout(() => { el.textContent = ''; }, 4000);
+    }
+
+    async function loadEntries() {
+      try {
+        const res = await fetch(API, { headers: headers() });
+        if (!res.ok) throw new Error('Senha incorreta ou não configurada');
+        const entries = await res.json();
+        const list = $('list');
+        if (!entries.length) {
+          list.innerHTML = '<p class="hint">Nenhum conhecimento extra ainda.</p>';
+          return;
+        }
+        list.innerHTML = entries.map((e) => {
+          const labels = { business: 'Fato', faq: 'FAQ', style: 'Estilo', correction: 'Correção' };
+          return `<div class="entry"><div><span class="tag">${labels[e.category] || e.category}</span>` +
+            `<p></p><small>${new Date(e.createdAt).toLocaleString()}</small></div>` +
+            `<button class="del" data-id="${e.id}">excluir</button></div>`;
+        }).join('');
+        list.querySelectorAll('p').forEach((p, i) => { p.textContent = entries[i].text; });
+        list.querySelectorAll('.del').forEach((b) => b.addEventListener('click', () => del(b.dataset.id)));
+      } catch (err) {
+        $('list').innerHTML = `<p class="hint error">${err.message}</p>`;
+      }
+    }
+
+    async function del(id) {
+      const res = await fetch(`${API}/${id}`, { method: 'DELETE', headers: headers() });
+      if (!res.ok) return status('Erro ao excluir', true);
+      status('Excluído ✓');
+      loadEntries();
+    }
+
+    $('add').addEventListener('click', async () => {
+      const text = $('text').value.trim();
+      if (!text) return status('Escreva algo primeiro', true);
+      const res = await fetch(API, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ category: $('category').value, text }),
+      });
+      if (!res.ok) return status('Erro ao salvar — confira a senha', true);
+      $('text').value = '';
+      status('Salvo! A IA já sabe disso ✓');
+      loadEntries();
+    });
+
+    loadEntries();
+  </script>
+</body>
+</html>
