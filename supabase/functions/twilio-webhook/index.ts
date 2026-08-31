@@ -43,10 +43,19 @@ Deno.serve(async (req: Request) => {
       if (!authToken || !signature) {
         return new Response('Missing Twilio signature configuration', { status: 403 });
       }
-      // Behind Supabase the public URL is simply the request URL.
-      const valid = await validateTwilioSignature(authToken, signature, req.url, params);
+      // Twilio signs the PUBLIC URL configured in its console. Inside the
+      // edge runtime req.url may differ (internal host / stripped path),
+      // so validate against both candidates.
+      const publicUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/twilio-webhook`;
+      let valid = false;
+      for (const candidate of [publicUrl, req.url]) {
+        if (await validateTwilioSignature(authToken, signature, candidate, params)) {
+          valid = true;
+          break;
+        }
+      }
       if (!valid) {
-        console.warn('[twilio] invalid signature for', req.url);
+        console.warn('[twilio] invalid signature. req.url =', req.url);
         return new Response('Invalid Twilio signature', { status: 403 });
       }
     }
