@@ -1,0 +1,20 @@
+{
+  "name": "soccerflow-bot",
+  "version": "1.0.0",
+  "description": "SMS + WhatsApp auto-reply bot for Soccer Flow (San Diego youth soccer)",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "lowdb": "^7.0.1",
+    "twilio": "^5.3.3"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "_notes": "OWNER ACTION REQUIRED: every value marked \"TODO\" below must be filled in by the business owner before going live. The bot is instructed to never invent prices, schedules or locations — anything still marked TODO will trigger a human handoff when a parent asks about it.",
+  "name": "Soccer Flow",
+  "city": "San Diego, CA, USA",
+  "description": "Youth soccer program for kids ages 2 to 7+. Small outdoor group classes with positive, encouraging coaching. First class is free with no commitment.",
+  "ages": "2-7+",
+  "programs": [
+    {
+      "name": "Explorers",
+      "ages": "2-3",
+      "description": "Play-based intro to soccer for the littlest ones, focused on fun, movement and ball familiarity."
+    },
+    {
+      "name": "Juniors",
+      "ages": "4-5",
+      "description": "Foundational skills: dribbling, passing, coordination and small games in a positive setting."
+    },
+    {
+      "name": "Academy",
+      "ages": "6-7+",
+      "description": "More structure and technique for older kids: skills, teamwork and game understanding."
+    }
+  ],
+  "style": "Small outdoor groups, positive coaching, no pressure, lots of encouragement.",
+  "free_first_class": true,
+  "free_first_class_terms": "The first class is completely free, no commitment required.",
+  "phone": "+1 (858) 445-4126",
+  "pricing": "TODO",
+  "schedule": "TODO",
+  "locations": "TODO",
+  "faq_extras": "TODO"
+}
