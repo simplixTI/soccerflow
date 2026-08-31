@@ -1,0 +1,13 @@
+# Supabase CLI configuration for the Soccer Flow bot edge functions.
+# `supabase link --project-ref <ref>` fills in the project reference.
+
+# Webhooks (uazapi / Twilio) and the admin page browser calls carry no
+# Supabase JWT, so JWT verification MUST be disabled per function.
+[functions.twilio-webhook]
+verify_jwt = false
+
+[functions.uazapi-webhook]
+verify_jwt = false
+
+[functions.admin]
+verify_jwt = false

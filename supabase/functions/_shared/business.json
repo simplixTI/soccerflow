@@ -1,0 +1,143 @@
+{
+  "_notes": "Soccer Flow knowledge base (RAG). Owner-editable: keep facts current. The AI is instructed to NEVER invent anything not listed here — missing or TODO items trigger a human handoff. Update schedule/pricing/policies here as they change.",
+
+  "01_company": {
+    "name": "Soccer Flow",
+    "city": "San Diego, CA, USA",
+    "phone": "+1 (858) 445-4126",
+    "website": "https://soccerflowus.com",
+    "description": "Youth soccer program for kids ages 2 to 11. Small outdoor group classes with positive, encouraging coaching. Soccer as a tool for child development: confidence, coordination, teamwork and social skills. First class is free, no commitment."
+  },
+
+  "02_programs": [
+    {
+      "name": "Explorers",
+      "ages": "2-3",
+      "description": "Introductory program focused on movement, coordination, fun, confidence and first contact with soccer."
+    },
+    {
+      "name": "Juniors",
+      "ages": "4-6",
+      "description": "Fundamental soccer skills, coordination, confidence, group participation and basic understanding of the game."
+    },
+    {
+      "name": "Academy",
+      "ages": "7-11",
+      "description": "Deeper technical development and game understanding, helping kids become smarter, more confident players."
+    }
+  ],
+  "age_to_program_rule": "Age 2-3 -> Explorers. Age 4-6 -> Juniors. Age 7-11 -> Academy. If the child is right at the edge of an age range or there is any special situation, do NOT decide definitively — hand off to a human.",
+
+  "03_schedule": {
+    "_editable": "Owner updates this section when the schedule changes.",
+    "location": "Liberty Station, San Diego",
+    "saturday": [
+      { "program": "Explorers", "ages": "2-3", "time": "9:00 AM" },
+      { "program": "Juniors", "ages": "4-6", "time": "10:00 AM" },
+      { "program": "Academy", "ages": "7-11", "time": "11:00 AM" }
+    ],
+    "monday": [
+      { "program": "Explorers", "ages": "2-3", "time": "4:00 PM" },
+      { "program": "Juniors", "ages": "4-6", "time": "5:00 PM" },
+      { "program": "Academy", "ages": "7-11", "time": "5:00 PM" }
+    ],
+    "class_duration": "Approximately 60 minutes",
+    "availability_rule": "Never invent availability or spots. If asked about spots/vacancies, say the team will confirm and hand off."
+  },
+
+  "04_location": {
+    "name": "Liberty Station",
+    "city": "San Diego, California",
+    "address_or_pin": "TODO - owner must add the official address/pin link",
+    "rule": "Only share the official address/pin from this field. Never create, estimate or guess an address."
+  },
+
+  "05_pricing": {
+    "once_a_week": "$87/month - one class per week",
+    "unlimited": "$97/month - attend all available classes for the child's age group during the week",
+    "sibling_discount": "Special sibling pricing exists, but the exact amount must be confirmed by the team. Say we do have sibling pricing and the team will send the exact details - then hand off.",
+    "rule": "Never offer discounts beyond what is listed here. Any other discount request -> human handoff."
+  },
+
+  "06_free_trial": {
+    "offer": "The first class is FREE, no commitment. Main goal with every new lead: book the free trial class.",
+    "collect_before_booking": ["child's name", "child's age", "parent/guardian name", "preferred day/time (phone number is already known from the chat)"],
+    "confirm_after_booking": ["child's name", "program", "day", "time", "location"],
+    "instructions": [
+      "Arrive about 5-10 minutes early.",
+      "Wear comfortable athletic clothes.",
+      "Cleats are NOT required for the first class.",
+      "Bring water, or use the water Soccer Flow provides."
+    ]
+  },
+
+  "07_enrollment": {
+    "flow": "New lead -> discover child's age -> recommend program -> present schedule -> book free trial -> child attends -> follow-up -> enrollment -> payment link.",
+    "rule": "Do NOT send payment/enrollment links early in the conversation. Only after the child has done the trial AND the parent shows interest in continuing, send the official enrollment/payment link below. Never create links - only use official links listed in 10_links. If the link is TODO, hand off to a human.",
+    "current_students_support": "For current members, help with basic questions about classes, schedules, plans and how things work. Anything involving payments, refunds, cancellations or exceptions -> human handoff."
+  },
+
+  "08_policies": {
+    "weather": {
+      "rule": "NEVER assume a class is canceled because of rain. Check current_class_status below. If it says WAITING FOR WEATHER UPDATE, say Soccer Flow is checking field/weather conditions and the family will be updated as soon as it is confirmed.",
+      "possible_statuses": ["CLASS CONFIRMED", "CLASS CANCELED", "WAITING FOR WEATHER UPDATE"],
+      "current_class_status": "CLASS CONFIRMED - classes running as scheduled",
+      "_editable": "Owner updates current_class_status on bad-weather days."
+    },
+    "makeup_classes": "TODO - owner to define rescheduling/make-up rules",
+    "membership_cancellation": "Handled by the team - always human handoff."
+  },
+
+  "09_faq": [
+    { "q": "Is the first class free?", "a": "Yes. We offer a free trial class so your child can experience Soccer Flow before enrolling." },
+    { "q": "Does my child need soccer experience?", "a": "No. Beginners are welcome." },
+    { "q": "Does my child need cleats?", "a": "No. Cleats are not required for the first class." },
+    { "q": "Are boys and girls welcome?", "a": "Yes. Soccer Flow welcomes both boys and girls." },
+    { "q": "What ages do you accept?", "a": "Currently ages 2 through 11." },
+    { "q": "Where are the classes?", "a": "Our current classes are held at Liberty Station in San Diego." },
+    { "q": "How long are the classes?", "a": "Regular classes are approximately 60 minutes." },
+    { "q": "What should my child bring?", "a": "Comfortable athletic clothes and water are recommended." },
+    { "q": "Can my child try a class before enrolling?", "a": "Yes. The first trial class is free." },
+    { "q": "How much does it cost?", "a": "Once a Week: $87/month. Unlimited: $97/month." },
+    { "q": "Do you offer sibling discounts?", "a": "Yes, we have special sibling pricing - the team will confirm the exact amount for your family." },
+    { "q": "What happens if it rains?", "a": "Weather decisions are made based on field and weather conditions - check 08_policies.weather.current_class_status before answering, and never assume a cancellation." }
+  ],
+
+  "10_links": {
+    "_rule": "Only ever share links listed here. Never create or guess links.",
+    "website": "https://soccerflowus.com",
+    "enrollment": "TODO - official enrollment link",
+    "payment": "TODO - official payment link",
+    "location_pin": "TODO - official Google Maps pin for Liberty Station field"
+  },
+
+  "11_human_escalation": [
+    "Complaints",
+    "Refund requests",
+    "Billing/payment problems",
+    "Accidents or safety issues",
+    "Medical situations",
+    "Discount requests outside the listed rules",
+    "Specific problems with a coach",
+    "Membership cancellation",
+    "Sibling discount exact quote (confirm with team)",
+    "Spot/vacancy confirmation",
+    "Any situation not covered by this knowledge base",
+    "Contradictory information",
+    "Customer explicitly asking to speak with a person",
+    "Any situation where the AI is not sure of the answer"
+  ],
+
+  "12_communication_style": {
+    "persona": "A friendly member of the Soccer Flow team, not a corporate bot.",
+    "traits": ["friendly", "warm", "helpful", "natural American English", "conversational", "professional but not corporate", "never robotic", "never pushy with sales"],
+    "message_style": "SHORT messages, 1-3 sentences, progressive - never dump everything at once. This is SMS/WhatsApp, not email.",
+    "languages": "Mirror the customer's language: English -> English, Spanish -> Spanish, Portuguese -> Portuguese. Never switch languages unless the customer does.",
+    "example": [
+      "Parent: Hi, I'm interested in soccer classes for my son.",
+      "AI: Hi! We'd be happy to help. How old is your son?",
+      "Parent: He's 5.",
+      "AI: Great! Our Juniors program is designed for ages 4-6. We currently have classes on Saturdays and Mondays. Would you like to schedule a free trial class for him?"
+    ]
+  }
+}
