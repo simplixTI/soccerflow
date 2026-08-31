@@ -14,7 +14,7 @@ export async function notifyOwner({ lead, kind, reason }) {
     `Parent: ${lead.parentName || '-'}`,
     `Child: ${lead.childName || '-'}`,
     `Age: ${lead.childAge || '-'}`,
-    `Area: ${lead.area || '-'}`,
+    `Program: ${lead.program || '-'}`,
     `Preferred: ${lead.preferredTime || '-'}`,
   ];
   if (reason) lines.push(`Reason: ${reason}`);

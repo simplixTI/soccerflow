@@ -11,31 +11,47 @@ export async function chat({ systemPrompt, messages }) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not set');
 
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
-      response_format: { type: 'json_object' },
-      temperature: 0.4,
-      max_tokens: 400,
-    }),
-  });
+  // DeepSeek occasionally returns whitespace-only content with json_object
+  // mode (finish_reason "stop"). Retry, and on the last attempt drop
+  // response_format entirely (parseModelOutput extracts the JSON anyway).
+  const MAX_ATTEMPTS = 3;
+  let lastContent = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const useJsonMode = attempt < MAX_ATTEMPTS;
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+        messages: [{ role: 'system', content: systemPrompt }, ...messages],
+        ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
+        temperature: 0.4,
+        max_tokens: 400,
+      }),
+    });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`DeepSeek API error ${res.status}: ${body.slice(0, 300)}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`DeepSeek API error ${res.status}: ${body.slice(0, 300)}`);
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (process.env.DEBUG_DEEPSEEK) {
+      console.error('[deepseek] finish_reason:', data?.choices?.[0]?.finish_reason);
+      console.error('[deepseek] raw content:', JSON.stringify(content));
+    }
+
+    if (content && content.trim()) return parseModelOutput(content);
+
+    lastContent = content;
+    console.warn(`[deepseek] whitespace-only response (attempt ${attempt}/${MAX_ATTEMPTS}, json_mode=${useJsonMode})`);
   }
 
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('DeepSeek returned an empty response');
-
-  return parseModelOutput(content);
+  throw new Error(`DeepSeek returned only whitespace after ${MAX_ATTEMPTS} attempts: ${JSON.stringify(lastContent)}`);
 }
 
 function parseModelOutput(content) {
@@ -76,7 +92,7 @@ function parseModelOutput(content) {
       parentName: lead.parentName ?? null,
       childName: lead.childName ?? null,
       childAge: lead.childAge ?? null,
-      area: lead.area ?? null,
+      program: lead.program ?? null,
       preferredTime: lead.preferredTime ?? null,
     },
     handoff: Boolean(parsed.handoff),

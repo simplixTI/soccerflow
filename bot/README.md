@@ -62,8 +62,13 @@ Conversation history (last 20 messages per channel+phone) and leads are stored i
 
 ## Owner action required
 
-Open `business.json` and replace every `"TODO"` (pricing, schedule, locations, extra FAQs).
-Until then, the bot will hand those questions off to a human by design.
+`business.json` is the bot's knowledge base, organized in 12 numbered modules
+(company, programs, schedule, location, pricing, free trial, enrollment, policies,
+FAQ, links, human escalation, communication style). The remaining `"TODO"` items
+are: official address/map pin, enrollment link, payment link, and make-up-class rules.
+Update schedule, pricing and `08_policies.weather.current_class_status` there as they
+change — no code changes needed. Anything still marked TODO is handed off to a human
+by design.
 
 ## Useful endpoints
 

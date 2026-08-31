@@ -57,7 +57,7 @@ export async function upsertLead(channel, phone, fields = {}, state = null) {
       parentName: null,
       childName: null,
       childAge: null,
-      area: null,
+      program: null,
       preferredTime: null,
       state: 'LEAD_IN_PROGRESS',
       ownerNotified: false,
@@ -66,7 +66,7 @@ export async function upsertLead(channel, phone, fields = {}, state = null) {
     };
     db.data.leads.push(lead);
   }
-  for (const key of ['parentName', 'childName', 'childAge', 'area', 'preferredTime']) {
+  for (const key of ['parentName', 'childName', 'childAge', 'program', 'preferredTime']) {
     if (fields[key] != null && fields[key] !== '') lead[key] = fields[key];
   }
   if (state) lead.state = state;
