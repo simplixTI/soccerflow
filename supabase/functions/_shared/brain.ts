@@ -135,12 +135,16 @@ const RESUME_REPLY =
  * customer chat, delivered via the uazapi fromMe webhook).
  *
  * Commands:
- *   /assumir — owner takes over; the AI goes silent in this conversation
- *   /voltar  — AI resumes control
+ *   /assumir — owner takes over explicitly; the AI goes silent
+ *   /voltar  — AI resumes control immediately
+ *
+ * AUTO-TAKEOVER: any non-command owner message was typed manually (bot API
+ * replies are excluded at the webhook level via wasSentByApi), so it also
+ * triggers a takeover: the AI goes silent and the message is recorded as
+ * assistant context for when the AI resumes — via /voltar or automatically
+ * when the takeover TTL (TAKEOVER_TTL_HOURS, default 24h) expires.
  *
  * Returns a customer-facing message to send into the chat, or null.
- * While takeover is active, non-command owner messages are recorded as
- * assistant messages so the AI has full context when it resumes.
  */
 export async function handleOwnerMessage(
   { channel, phone, text }: { channel: string; phone: string; text: string },
@@ -149,7 +153,7 @@ export async function handleOwnerMessage(
     const cmd = text.trim().toLowerCase();
     if (cmd === '/assumir' || cmd === '/takeover') {
       await setTakeover(channel, phone);
-      console.log(`[brain] takeover ON for ${channel}:${phone}`);
+      console.log(`[brain] takeover ON (explicit) for ${channel}:${phone}`);
       return TAKEOVER_REPLY;
     }
     if (cmd === '/voltar' || cmd === '/resume') {
@@ -157,12 +161,10 @@ export async function handleOwnerMessage(
       console.log(`[brain] takeover OFF for ${channel}:${phone}`);
       return RESUME_REPLY;
     }
-    // Not a command. If takeover is active, this is the owner talking to the
-    // customer — record it as an assistant message for AI context. Otherwise
-    // it's an echo of the bot's own API reply: ignore.
-    if (await isTakeover(channel, phone)) {
-      await appendMessages(channel, phone, [{ role: 'assistant', content: text }]);
-    }
+    // Not a command: manual owner message → automatic takeover.
+    await setTakeover(channel, phone);
+    await appendMessages(channel, phone, [{ role: 'assistant', content: text }]);
+    console.log(`[brain] auto-takeover for ${channel}:${phone} (owner typed manually)`);
     return null;
   } catch (err) {
     console.error(`[brain] error handling owner message for ${channel}:${phone}:`, (err as Error).message);

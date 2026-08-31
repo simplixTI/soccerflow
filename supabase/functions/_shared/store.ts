@@ -168,7 +168,7 @@ export async function markLeadNotified(channel: string, phone: string): Promise<
   if (error) throw error;
 }
 
-// --- Human takeover (/assumir) ------------------------------------------------
+// --- Human takeover (/assumir + auto-takeover) ---------------------------------
 
 /** Owner takes over a conversation: the AI goes silent for this channel+phone. */
 export async function setTakeover(channel: string, phone: string, by = 'owner'): Promise<void> {
@@ -188,15 +188,32 @@ export async function clearTakeover(channel: string, phone: string): Promise<voi
   if (error) throw error;
 }
 
+function takeoverTtlMs(): number {
+  const hours = Number(Deno.env.get('TAKEOVER_TTL_HOURS') || '24');
+  return (Number.isFinite(hours) && hours > 0 ? hours : 24) * 60 * 60 * 1000;
+}
+
+/**
+ * True when a human is in control of this conversation.
+ * Takeovers expire automatically after TAKEOVER_TTL_HOURS (default 24h) of
+ * owner inactivity — the AI never stays silent forever by accident.
+ */
 export async function isTakeover(channel: string, phone: string): Promise<boolean> {
   const { data, error } = await db()
     .from('takeovers')
-    .select('channel')
+    .select('at')
     .eq('channel', channel)
     .eq('phone', phone)
     .maybeSingle();
   if (error) throw error;
-  return Boolean(data);
+  if (!data) return false;
+  const age = Date.now() - new Date(data.at).getTime();
+  if (age > takeoverTtlMs()) {
+    await clearTakeover(channel, phone);
+    console.log(`[store] takeover expired for ${channel}:${phone} — AI resumes`);
+    return false;
+  }
+  return true;
 }
 
 // --- Living knowledge base (owner-fed RAG) -------------------------------------

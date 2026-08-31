@@ -96,9 +96,14 @@ Enter the `ADMIN_TOKEN` in the password field (stored in localStorage). The
 same knowledge base can also be fed by SMS from the owner number:
 `/ensinar <fato|faq|estilo|correcao> <texto>`.
 
-Owner takeover commands: `/assumir +1XXX` and `/voltar +1XXX` work both via
-SMS (owner number) and via WhatsApp (typing `/assumir` / `/voltar` in the
-customer chat from the business number).
+Owner takeover: on WhatsApp, **any message the owner types manually** in a
+customer chat (phone or WhatsApp Web) automatically silences the AI in that
+conversation — no command needed. The owner's messages are recorded as context
+for when the AI resumes. Typing `/voltar` (or `/resume`) hands the conversation
+back to the AI immediately; otherwise the takeover expires automatically after
+`TAKEOVER_TTL_HOURS` (default 24h) of owner inactivity. `/assumir` still works
+as an explicit takeover that also posts a transition message in the chat.
+Via SMS, the owner texts the Twilio number: `/assumir +1XXX` / `/voltar +1XXX`.
 
 ## Debugging
 

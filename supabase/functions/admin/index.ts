@@ -47,10 +47,9 @@ Deno.serve(async (req: Request) => {
   const apiIndex = path.indexOf('/api/kb');
   if (apiIndex === -1) {
     // Admin HTML page (unguarded — the page itself asks for the key).
-    return new Response(ADMIN_HTML, {
-      status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS },
-    });
+    const headers = new Headers(CORS_HEADERS);
+    headers.set('Content-Type', 'text/html; charset=utf-8');
+    return new Response(ADMIN_HTML, { status: 200, headers });
   }
 
   // KB JSON API — everything below is behind the admin guard.
