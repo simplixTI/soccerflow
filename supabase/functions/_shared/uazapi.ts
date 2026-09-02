@@ -50,6 +50,11 @@ export function parseIncoming(body: any): IncomingMessage | null {
   if (chatType === 'group') return null;
   if (msg.isGroup || body.isGroup) return null;
 
+  // Defensive: if uazapi echoes our own API-sent messages back, ignore them.
+  // (The uazapi instance is also expected to exclude `wasSentByApi` events.)
+  const wasSentByApi = msg.wasSentByApi ?? body.wasSentByApi ?? msg.data?.wasSentByApi;
+  if (wasSentByApi === true) return null;
+
   const fromMe = Boolean(msg.fromMe ?? msg.key?.fromMe ?? body.fromMe);
 
   // Text extraction across common shapes.

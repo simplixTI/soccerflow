@@ -25,6 +25,28 @@ export interface ChatResult {
   handoff_reason: string | null;
 }
 
+// Hard ceiling for the reply text. The prompt already asks for short replies,
+// but we clip as a safety net. If we DO need to clip, snap back to the last
+// sentence boundary so we never send a message that ends mid-word.
+const REPLY_HARD_MAX = 800;
+
+function clipReply(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.length <= REPLY_HARD_MAX) return trimmed;
+  const window = trimmed.slice(0, REPLY_HARD_MAX);
+  // Prefer the last sentence-ending punctuation in the window.
+  const lastBoundary = Math.max(
+    window.lastIndexOf('.'),
+    window.lastIndexOf('!'),
+    window.lastIndexOf('?'),
+    window.lastIndexOf('\n'),
+  );
+  if (lastBoundary >= REPLY_HARD_MAX * 0.5) return window.slice(0, lastBoundary + 1).trim();
+  // No decent boundary — fall back to the last whitespace to avoid mid-word cuts.
+  const lastSpace = window.lastIndexOf(' ');
+  return (lastSpace > 0 ? window.slice(0, lastSpace) : window).trim();
+}
+
 export async function chat(
   { systemPrompt, messages }: { systemPrompt: string; messages: ChatMessage[] },
 ): Promise<ChatResult> {
@@ -49,7 +71,7 @@ export async function chat(
         messages: [{ role: 'system', content: systemPrompt }, ...messages],
         ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
         temperature: 0.4,
-        max_tokens: 400,
+        max_tokens: 600,
       }),
     });
 
@@ -94,7 +116,7 @@ function parseModelOutput(content: string): ChatResult {
   if (!parsed || typeof parsed !== 'object') {
     // Plain-text fallback: treat the whole content as the reply.
     return {
-      reply: content.slice(0, 320),
+      reply: clipReply(content),
       state: 'QUESTION',
       lead: {
         parentName: null,
@@ -112,7 +134,7 @@ function parseModelOutput(content: string): ChatResult {
   const lead = (parsed.lead && typeof parsed.lead === 'object') ? parsed.lead : {};
 
   return {
-    reply: String(parsed.reply || '').slice(0, 320) ||
+    reply: clipReply(String(parsed.reply || '')) ||
       'Thanks for reaching out to Soccer Flow! How can I help you today?',
     state: validStates.includes(parsed.state) ? parsed.state : 'QUESTION',
     lead: {

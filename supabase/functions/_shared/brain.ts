@@ -25,17 +25,27 @@ const FALLBACK_REPLY =
   // in business.json, so this was always the fallback text. Kept as-is.
   (((business as unknown) as Record<string, unknown>).phone || 'our number') + '.';
 
-function buildSystemPrompt(lead: Lead | null, kbSection: string): string {
-  const knownLead = lead
-    ? `RETURNING CONTACT — already collected from this family: ${JSON.stringify({
+function buildSystemPrompt(lead: Lead | null, kbSection: string, hasHistory: boolean): string {
+  const leadJson = lead
+    ? JSON.stringify({
         parentName: lead.parentName,
         childName: lead.childName,
         childAge: lead.childAge,
         program: lead.program,
         preferredTime: lead.preferredTime,
         state: lead.state,
-      })}. Do NOT re-ask fields already collected.`
-    : 'New contact — nothing known about this family yet.';
+      })
+    : null;
+
+  const knownLead = lead
+    ? `RETURNING CONTACT — structured data captured so far: ${leadJson}. Do NOT re-ask fields already filled in. Fields shown as null may STILL have been answered in the chat history (a human teammate often replies manually without updating the structured record) — always scan the history for the answer BEFORE asking the customer again.`
+    : hasHistory
+      ? 'RETURNING CONTACT — you have spoken with this family before. Prior messages are in the chat history below (some may have been typed manually by a human teammate — treat them as fully authoritative). USE them: acknowledge continuity, do NOT restart from scratch, and do NOT ask anything already discussed.'
+      : 'New contact — nothing known about this family yet.';
+
+  const historyRule = hasHistory
+    ? '\n- CONTEXT-FIRST — before asking ANY question (child name/age, parent name, preferred day/time, program, etc.), scan the full chat history above. If the answer is anywhere in it (from you OR from a manual reply by the team), use it directly instead of asking again. Re-asking answered questions confuses returning customers and MUST be avoided.'
+    : '';
 
   const extraKnowledge = kbSection
     ? `\n\nTEAM TEACHINGS (added over time by the Soccer Flow team — authoritative; they refine and may override the base knowledge above):\n${kbSection}`
@@ -48,7 +58,7 @@ ${JSON.stringify(business, null, 2)}${extraKnowledge}
 
 BEHAVIOR RULES:
 - LANGUAGE: mirror the customer's language — English, Spanish or Portuguese. Default English. Never switch unless the customer does.
-- STYLE: follow 12_communication_style. SHORT progressive messages, max 320 characters, 1-3 sentences. Never dump all information at once. Never pushy with sales.
+- STYLE: follow 12_communication_style. SHORT progressive messages (target 150-300 chars, hard cap ~700). ALWAYS end at a complete sentence — never leave a message mid-thought or mid-word. Never dump all information at once. Never pushy with sales.
 - FIRST IDENTIFY who is writing: (1) new family interested in Soccer Flow, (2) family with a child already enrolled, (3) family that already did or scheduled a free trial, (4) other reason. Use the known-contact info below before asking unnecessary questions.
 - NEW LEADS — main goal: book the FREE TRIAL class. Converse gradually, ONE question at a time. Get the child's name and age early — the age determines the program (see age_to_program_rule). Recommend the program, present its available days/times from 03_schedule, and offer the free trial.
 - Collect before booking the trial (one at a time, never re-ask known fields): child's name, child's age, parent/guardian name, preferred day/time. The phone number is already known.
@@ -59,7 +69,7 @@ BEHAVIOR RULES:
 - WEATHER: never assume a class is canceled. Follow 08_policies.weather — check current_class_status; if it is WAITING FOR WEATHER UPDATE, say conditions are being checked and the family will be updated.
 - NEVER invent prices, schedules, addresses, availability, discounts or policies. If something is "TODO", missing, or you are not sure: say someone from the Soccer Flow team will follow up, set handoff=true with handoff_reason.
 - HUMAN_HANDOFF / handoff=true: anything in 11_human_escalation, the customer asks for a person, is upset, or you are unsure. Reply warmly that the team will personally follow up soon.
-- ${knownLead}
+- ${knownLead}${historyRule}
 
 OUTPUT FORMAT: respond with STRICT JSON only, no markdown, no extra text:
 {"reply": "...", "state": "QUESTION|LEAD_IN_PROGRESS|LEAD_QUALIFIED|HUMAN_HANDOFF", "lead": {"parentName": null, "childName": null, "childAge": null, "program": null, "preferredTime": null}, "handoff": false, "handoff_reason": null}
@@ -89,7 +99,7 @@ export async function handleIncoming(
     const kbSection = await getKbPromptSection();
 
     const result = await chat({
-      systemPrompt: buildSystemPrompt(existingLead, kbSection),
+      systemPrompt: buildSystemPrompt(existingLead, kbSection, history.length > 0),
       messages: [...history, { role: 'user', content: text }],
     });
 

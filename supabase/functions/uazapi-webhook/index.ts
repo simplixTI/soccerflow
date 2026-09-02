@@ -12,6 +12,7 @@
  * - anything unparseable is logged and acked.
  */
 import { handleIncoming, handleOwnerMessage } from '../_shared/brain.ts';
+import { getHistory } from '../_shared/store.ts';
 import { parseIncoming, sendText } from '../_shared/uazapi.ts';
 
 function ack(): Response {
@@ -19,6 +20,23 @@ function ack(): Response {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+// Human-like reply pacing: instant replies feel obviously botty.
+// First reply in a fresh conversation waits ~10s; subsequent replies
+// wait a random 5–10s. Runs in-request (uazapi tolerates the extra latency).
+async function humanDelayMs(phone: string): Promise<number> {
+  try {
+    const history = await getHistory('whatsapp', phone);
+    if (history.length === 0) return 10_000;
+  } catch {
+    // If we can't read history, fall back to the random range.
+  }
+  return 5_000 + Math.floor(Math.random() * 5_001); // 5000–10000ms
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 Deno.serve(async (req: Request) => {
@@ -49,6 +67,7 @@ Deno.serve(async (req: Request) => {
       return ack();
     }
 
+    const delayMs = await humanDelayMs(incoming.phone);
     const reply = await handleIncoming({
       channel: 'whatsapp',
       phone: incoming.phone,
@@ -56,6 +75,7 @@ Deno.serve(async (req: Request) => {
     });
     if (reply == null) return ack(); // takeover active: stay silent
     try {
+      await sleep(delayMs);
       await sendText(incoming.phone, reply);
     } catch (err) {
       console.error('[uazapi webhook] failed to send reply:', (err as Error).message);

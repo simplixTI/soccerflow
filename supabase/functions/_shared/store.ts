@@ -189,8 +189,8 @@ export async function clearTakeover(channel: string, phone: string): Promise<voi
 }
 
 function takeoverTtlMs(): number {
-  const hours = Number(Deno.env.get('TAKEOVER_TTL_HOURS') || '24');
-  return (Number.isFinite(hours) && hours > 0 ? hours : 24) * 60 * 60 * 1000;
+  const hours = Number(Deno.env.get('TAKEOVER_TTL_HOURS') || '12');
+  return (Number.isFinite(hours) && hours > 0 ? hours : 12) * 60 * 60 * 1000;
 }
 
 /**
@@ -257,22 +257,43 @@ const KB_CATEGORY_LABELS: Record<string, string> = {
   correction: 'CORRECTION / HOW TO HANDLE',
 };
 
-const MAX_KB_CHARS = 6000;
+// DeepSeek chat supports ~64K input tokens (~200K chars); 80K leaves plenty of
+// room for base business.json, conversation history, and the current message.
+const MAX_KB_CHARS = 80000;
+
+// Higher-priority categories are packed first so they never get dropped when
+// the KB grows past MAX_KB_CHARS. Corrections override everything → they win.
+const CATEGORY_PRIORITY: Record<string, number> = {
+  correction: 0,
+  business: 1,
+  faq: 2,
+  style: 3,
+};
 
 /**
  * Render the owner-fed knowledge entries as a prompt section.
- * Newest entries win when over the size cap. Returns '' when empty.
+ * Higher-priority categories come first; within a category, newest wins.
+ * Entries that don't fit under MAX_KB_CHARS are skipped (not a hard stop —
+ * a smaller lower-priority entry after a huge one can still fit).
  */
 export async function getKbPromptSection(): Promise<string> {
   const kb = await listKb();
   if (!kb.length) return '';
-  const newestFirst = [...kb].reverse();
-  let out = '';
-  for (const e of newestFirst) {
+  const sorted = [...kb].sort((a, b) => {
+    const pa = CATEGORY_PRIORITY[a.category] ?? 99;
+    const pb = CATEGORY_PRIORITY[b.category] ?? 99;
+    if (pa !== pb) return pa - pb;
+    // Same category: newest first (createdAt desc).
+    return (b.createdAt || '').localeCompare(a.createdAt || '');
+  });
+  const parts: string[] = [];
+  let used = 0;
+  for (const e of sorted) {
     const label = KB_CATEGORY_LABELS[e.category] || 'NOTE';
     const line = `- [${label}] ${e.text}\n`;
-    if (out.length + line.length > MAX_KB_CHARS) break;
-    out = line + out; // keep chronological order in the final text
+    if (used + line.length > MAX_KB_CHARS) continue;
+    parts.push(line);
+    used += line.length;
   }
-  return out.trim();
+  return parts.join('').trim();
 }
