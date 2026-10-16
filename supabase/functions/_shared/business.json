@@ -98,7 +98,7 @@
       "sibling_once_a_week":     "https://soccerflow.pushpress.com/landing/plans/plan_ef071b08101d47",
       "sibling_unlimited":       "https://soccerflow.pushpress.com/landing/plans/plan_c4f5a02c097745"
     },
-    "multi_child": "First child uses a first_child link. Each additional child uses the matching sibling link. Ask which plan each child wants before sending links.",
+    "multi_child": "First child uses a first_child link. The sibling links are sent ONLY after the first child is enrolled and has paid the standard price. The bot cannot see payments, so: if the family is enrolling for the first time (even with several kids), send ONLY the first-child link, say the sibling link comes right after that first enrollment is completed, and set handoff so the team confirms the payment and sends the sibling link. Send a sibling link directly only if the parent says the first child is already an enrolled member, or a team member confirmed it in this conversation. Never send two enrollment links in one message.",
     "process": "Enrollment is online on PushPress: the parent fills the info, reviews and e-signs the waiver and membership agreement, picks the plan and pays by card. No cash.",
     "included": "The official Soccer Flow T-shirt is included after enrollment and the first payment, usually handed out at the next class. Not included with the free trial. Shorts, cleats, shin guards and socks are optional and bought separately by the family.",
     "after_enrollment": "When a family enrolls, congratulate them and welcome the child, do not just thank them for signing up.",
