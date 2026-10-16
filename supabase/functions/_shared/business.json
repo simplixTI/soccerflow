@@ -89,7 +89,7 @@
   },
 
   "07_enrollment": {
-    "when": "Only after the child did the trial AND the parent says they want to continue (words like enroll, sign up, register, join, membership, continue).",
+    "when": "Send an enrollment link in exactly two cases: (a) the parent explicitly asks for the enrollment or payment link, or clearly says they want to enroll, sign up, register, join or become a member now, even if the child has not done a trial yet; (b) after the trial, when the parent says they want to continue. Never send or push a link on your own. If they have not asked, offer the free trial instead.",
     "step_1": "Do NOT send a link right away. Briefly present the two plans: Once a Week $87/month (one class per week, flexible day) and Unlimited $97/month (all weekly classes for the age group, only $10 more). Ask which works better for the family.",
     "step_2": "After the parent picks a plan, send ONLY the matching official link. Never send more than one link unless it is a multi-child family.",
     "links": {
