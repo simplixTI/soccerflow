@@ -277,6 +277,7 @@ ${JSON.stringify(business, null, 2)}${teachings}
 FLOW RULES:
 - Language: mirror the customer (English, Spanish or Portuguese). Default English. Switch only if they switch.
 - Length: one to three short sentences. One question per message. Answer what was asked first, then move one step forward. Never dump everything at once. Always end on a complete sentence.
+- If the customer sent several messages in a row (they appear as consecutive customer messages at the end of the history), answer ALL of them in ONE reply, grouped and without repeating anything, then ask at most one question. Never answer the same point twice.
 - Identify who is writing: a new family, a current member, a family with a trial already booked, or something else. Use the conversation state before asking anything.
 - New family: find out the child's age early (ask warmly, explain it helps you recommend the right program and time). Recommend the program from age_to_program_rule, give the days and times for that program only, and offer the free trial without pressure.
 - Booking the trial: you need child's name, child's age and the chosen day (Monday, Wednesday or Saturday, if that day has a class for the age group). The parent naming a day while asking to try ("can he come Saturday?", "let's do Monday", "yes, Saturday") counts as choosing it. The time comes from the age and the day, never ask for it. Do NOT ask for the parent's name before booking. Do NOT ask "can I reserve it?" or "shall I book it?". When all three are known, send one message with: the child's name, the weekday AND the date from the TIME ANCHOR (for example "Saturday, 10/24"), the time, Liberty Station, and that you are sending the child's info to the team to add them to the attendance list (never say they ARE on the list or that the spot IS reserved, a human does that). Then: arrive 5 to 10 minutes early to meet the coach near the playground, comfortable clothes, cleats optional, bring a water bottle. If that date is a SPECIAL EVENT in the TIME ANCHOR, say the schedule is different that day and the team will confirm the exact time for the child's group instead of quoting the normal time. Set state LEAD_QUALIFIED (this notifies the team) and preferredTime like "Saturday 10:00 AM". If one of the three is missing, ask only for that one item.
@@ -306,20 +307,61 @@ If any check fails, fix the reply before returning it.`;
 }
 
 /**
+ * Persist a customer message immediately and return its id. Webhooks call
+ * this BEFORE the human delay so that, when several messages arrive in a
+ * burst, every one of them is in the history and only the invocation that
+ * holds the LATEST id goes on to answer (see isLatestIncoming).
+ */
+export async function recordIncoming(channel: string, phone: string, text: string): Promise<string> {
+  const id = crypto.randomUUID();
+  await appendMessages(channel, phone, [{ role: 'user', content: text, id }]);
+  return id;
+}
+
+/** True when `id` is still the most recent customer message in this conversation. */
+export async function isLatestIncoming(channel: string, phone: string, id: string): Promise<boolean> {
+  const history = await getHistory(channel, phone);
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === 'user') return history[i].id === id;
+  }
+  return true;
+}
+
+// Exact reply for the ad's first-contact message. Deterministic on purpose:
+// the owner wants every ad lead to receive this precise opening.
+const AD_OPENER_REPLY =
+  "Hi! Thanks for reaching out to Soccer Flow! We'd be happy to tell you more about our programs.\n\n" +
+  'We offer soccer programs for kids ages 2-11, focused on skill development, confidence, teamwork, and having fun while learning the game.\n\n' +
+  "Could you share your child's age, please? That way I can recommend the best program for them.";
+
+function isAdOpener(text: string): boolean {
+  const t = text.toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t.includes('soccer flow')) return false;
+  return /\b(learn|know|hear) more\b/.test(t) || t.includes('more about') || t.includes('how it works');
+}
+
+/**
  * Shared conversation logic used by both SMS and WhatsApp channels.
  * Returns the reply text to send back to the parent, or null when the bot
  * must stay silent (human takeover active). Never throws.
+ *
+ * preRecorded: the webhook already persisted this customer message via
+ * recordIncoming(); skip the internal appends of the user message.
  */
 export async function handleIncoming(
-  { channel, phone, text }: { channel: string; phone: string; text: string },
+  { channel, phone, text, preRecorded = false }:
+    { channel: string; phone: string; text: string; preRecorded?: boolean },
 ): Promise<string | null> {
+  const recordUser = async () => {
+    if (!preRecorded) await appendMessages(channel, phone, [{ role: 'user', content: text }]);
+  };
   try {
     // ALLOWLIST (emergency lockdown mode): when ALLOWLIST_PHONES env var is set
     // (comma-separated digits), the bot only responds to those phones. Every
     // other message is persisted but silently ignored. Owner clears the env
     // var when the lockdown is over.
     if (!isAllowed(phone)) {
-      await appendMessages(channel, phone, [{ role: 'user', content: text }]);
+      await recordUser();
       console.log(`[brain] allowlist blocked ${channel}:${phone} — staying silent`);
       return null;
     }
@@ -329,7 +371,7 @@ export async function handleIncoming(
     // resubscribe (START/VOLTAR/EMPEZAR), in which case clear the opt-out and
     // let the normal flow continue below.
     if (await isOptedOut(channel, phone)) {
-      await appendMessages(channel, phone, [{ role: 'user', content: text }]);
+      await recordUser();
       if (isResubscribeKeyword(text)) {
         await clearOptOut(channel, phone);
         const resumed = "Welcome back to Soccer Flow ⚽ How can we help you today?";
@@ -346,7 +388,7 @@ export async function handleIncoming(
     // standard SMS compliance set. Case/punctuation insensitive, exact match
     // on the trimmed message (so "stop sending me the invoice" is NOT an opt-out).
     if (isStopKeyword(text)) {
-      await appendMessages(channel, phone, [{ role: 'user', content: text }]);
+      await recordUser();
       await setOptOut(channel, phone, 'customer_keyword');
       const confirm = STOP_CONFIRMATION;
       await appendMessages(channel, phone, [{ role: 'assistant', content: confirm }]);
@@ -357,18 +399,31 @@ export async function handleIncoming(
     // Human takeover: the owner is handling this conversation manually.
     // Record the parent's message for context but stay silent.
     if (await isTakeover(channel, phone)) {
-      await appendMessages(channel, phone, [{ role: 'user', content: text }]);
+      await recordUser();
       console.log(`[brain] takeover active for ${channel}:${phone} — staying silent`);
       return null;
     }
 
     // Record the customer's message FIRST so it never gets lost if the LLM
     // call fails — the DB is the source of truth for conversation history.
-    await appendMessages(channel, phone, [{ role: 'user', content: text }]);
+    await recordUser();
 
     const existingLead = await findLead(channel, phone);
-    const history = await getHistory(channel, phone); // includes the message we just appended
-    const kbSection = await retrieveKbSection(text);
+    const history = await getHistory(channel, phone); // includes the current message
+
+    // Ad first contact: fixed opening, no model call. Only when this is the
+    // very first message of the conversation.
+    if (history.length <= 1 && isAdOpener(text)) {
+      await appendMessages(channel, phone, [{ role: 'assistant', content: AD_OPENER_REPLY }]);
+      console.log(`[brain] ad opener template for ${channel}:${phone}`);
+      return AD_OPENER_REPLY;
+    }
+
+    // When several customer messages arrived in a burst, the model answers
+    // them all at once: embed the whole burst for retrieval, not just the last.
+    const burst: string[] = [];
+    for (let i = history.length - 1; i >= 0 && history[i].role === 'user'; i--) burst.unshift(history[i].content);
+    const kbSection = await retrieveKbSection(burst.join('\n') || text);
 
     const result = await chatWithFallback({
       // history.length > 1 because the current message is now in the buffer;

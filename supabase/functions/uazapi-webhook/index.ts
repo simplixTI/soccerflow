@@ -11,7 +11,7 @@
  * - customer payloads -> handleIncoming; a non-null reply is sent via sendText.
  * - anything unparseable is logged and acked.
  */
-import { handleIncoming, handleOwnerMessage } from '../_shared/brain.ts';
+import { handleIncoming, handleOwnerMessage, recordIncoming, isLatestIncoming } from '../_shared/brain.ts';
 import { getHistory } from '../_shared/store.ts';
 import { parseIncoming, sendText } from '../_shared/uazapi.ts';
 
@@ -67,15 +67,25 @@ Deno.serve(async (req: Request) => {
       return ack();
     }
 
+    // Burst debouncing: persist first, wait the human-like window, and only
+    // answer if no newer customer message arrived meanwhile. The invocation
+    // holding the latest message replies once, covering the whole burst.
     const delayMs = await humanDelayMs(incoming.phone);
+    const id = await recordIncoming('whatsapp', incoming.phone, incoming.text);
+    await sleep(delayMs);
+    if (!(await isLatestIncoming('whatsapp', incoming.phone, id))) {
+      console.log(`[uazapi webhook] superseded by a newer message from ${incoming.phone}, staying silent`);
+      return ack();
+    }
+
     const reply = await handleIncoming({
       channel: 'whatsapp',
       phone: incoming.phone,
       text: incoming.text,
+      preRecorded: true,
     });
-    if (reply == null) return ack(); // takeover active: stay silent
+    if (reply == null) return ack(); // takeover / opt-out / allowlist: stay silent
     try {
-      await sleep(delayMs);
       await sendText(incoming.phone, reply);
     } catch (err) {
       console.error('[uazapi webhook] failed to send reply:', (err as Error).message);

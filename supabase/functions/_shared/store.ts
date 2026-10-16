@@ -11,6 +11,8 @@ import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 export interface ChatMessage {
   role: string;
   content: string;
+  /** Set on customer messages by the webhook so burst debouncing can tell which invocation holds the latest one. */
+  id?: string;
 }
 
 export interface Lead {

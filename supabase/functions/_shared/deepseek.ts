@@ -40,6 +40,8 @@ const REPLY_HARD_MAX = 800;
  */
 export function sanitizeReply(raw: string): string {
   return raw
+    // numeric ranges keep a plain hyphen ("ages 2–11" -> "ages 2-11")
+    .replace(/(\d)\s*[—–―]\s*(\d)/g, '$1-$2')
     .replace(/\s*[—–―]\s*/g, ', ')
     .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}]️?(‍[\p{Extended_Pictographic}]️?)*/gu, '')
     .replace(/[️‍]/g, '')

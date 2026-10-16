@@ -7,7 +7,7 @@
  * - Otherwise runs the conversation brain and replies via TwiML.
  * NEVER returns 500 to Twilio (it would retry); errors -> empty <Response/>.
  */
-import { handleIncoming } from '../_shared/brain.ts';
+import { handleIncoming, recordIncoming, isLatestIncoming } from '../_shared/brain.ts';
 import { setTakeover, clearTakeover, addKbEntry } from '../_shared/store.ts';
 import { validateTwilioSignature } from '../_shared/twilio.ts';
 
@@ -93,9 +93,17 @@ Deno.serve(async (req: Request) => {
       return twiml(`<Message>${xmlEscape(answer)}</Message>`);
     }
 
-    const reply = await handleIncoming({ channel: 'sms', phone: from, text: body });
+    // Burst debouncing (short window: Twilio needs a synchronous reply within 15s).
+    // Persist, wait 3s, and only answer if no newer SMS from this number arrived.
+    const id = await recordIncoming('sms', from, body);
+    await new Promise((r) => setTimeout(r, 3_000));
+    if (!(await isLatestIncoming('sms', from, id))) {
+      return twiml(''); // superseded by a newer message; that invocation answers for the burst
+    }
+
+    const reply = await handleIncoming({ channel: 'sms', phone: from, text: body, preRecorded: true });
     if (reply == null) {
-      return twiml(''); // takeover active: stay silent
+      return twiml(''); // takeover / opt-out: stay silent
     }
     return twiml(`<Message>${xmlEscape(reply)}</Message>`);
   } catch (err) {

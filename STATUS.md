@@ -35,7 +35,9 @@ Owner adds entries on `/admin` → indexed immediately (`_shared/kb-index.ts`); 
 |---|---|
 | Special event / holiday dates | `business.json 03_schedule.special_dates` (US `M/D/YYYY`). Shown in the anchor table; the bot says the schedule is different and the team confirms the time. Requires a deploy to change. |
 | Trial booking | needs name, age, day. Confirms weekday+date+time+Liberty Station and says the info is being **sent to the team** to add to the attendance list. Never "reserved"/"on the list". LEAD_QUALIFIED notifies the owner. |
-| Human-like delay | first reply ~10s, then 5–10s |
+| Human-like delay | first reply ~10s, then 5–10s. The wait happens BEFORE the model call and doubles as the burst window. |
+| Burst debouncing | each incoming message is persisted immediately with an id; after the wait, only the invocation holding the latest customer message answers, with the whole burst in context → one reply covering everything (fixes the duplicated location/schedule replies when a parent sends 3 messages in a row). |
+| Ad first contact | "Hi! I'd like to learn more about Soccer Flow and how it works." (and close variants) on a brand-new conversation gets a fixed template, no model call: intro + "ages 2-11" + warm ask for the child's age. `AD_OPENER_REPLY` in `_shared/brain.ts`. |
 | Reactions | ignored |
 | API echo filter | bot's own messages coming back are dropped (was causing bogus auto-takeovers) |
 | Auto-takeover | owner types in a chat → bot silent **4h** (`TAKEOVER_TTL_HOURS=4`) |
