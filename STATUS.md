@@ -15,7 +15,8 @@ Changes it forced: **Wednesday classes** (Juniors + Academy 5 PM, no Explorers y
 | Model | **OpenAI gpt-4o** (secret `OPENAI_CHAT_MODEL`; `gpt-4o-mini` cuts cost ~15x) |
 | Fallback | none. DeepSeek removed. On failure the bot stays silent; the customer message is already persisted. |
 | Timeout | 25s |
-| Output sanitizer | `sanitizeReply()` in `_shared/deepseek.ts` strips em/en dashes and **every emoji** from each reply before sending, regardless of the model |
+| Output sanitizer | `sanitizeReply()` in `_shared/deepseek.ts` strips em/en dashes and **every emoji** from each reply before sending, regardless of the model. Keeps paragraph breaks (only runs of spaces are collapsed). |
+| Reply format | House style = the ad greeting: short paragraphs separated by one blank line, one idea each, the question **alone in the last paragraph**. Prompt rule with 3 examples + `isolateTrailingQuestion()` in `_shared/deepseek.ts` enforces the lone question in code when the model glues it to the previous paragraph. |
 
 ### System prompt (`_shared/brain.ts` → `buildSystemPrompt`)
 identity → **8 ABSOLUTE RULES** (no emoji/dash, dates only from anchor, no invention, memory, exact links, **never claim something was done**, privacy, silence beats a wrong answer) → **TIME ANCHOR**: pre-resolved 8-day calendar in `America/Los_Angeles` with class days and **SPECIAL EVENT days from `business.json 03_schedule.special_dates`** → conversation state + history rules → `business.json` → team teachings → flow rules → JSON format → **FINAL CHECK**.

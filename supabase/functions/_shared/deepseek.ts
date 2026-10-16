@@ -46,14 +46,52 @@ export function sanitizeReply(raw: string): string {
     .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}]️?(‍[\p{Extended_Pictographic}]️?)*/gu, '')
     .replace(/[️‍]/g, '')
     .replace(/,\s*,/g, ',')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/\s+([.!?])/g, '$1')
-    .replace(/,\s*$/gm, '.')
+    // Collapse runs of spaces/tabs only. Newlines are KEPT: the reply style is
+    // short paragraphs separated by one blank line, and WhatsApp renders them.
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+([.!?])/g, '$1')
+    .replace(/,[ \t]*$/gm, '.')
     .trim();
 }
 
+/**
+ * House style: the question always stands alone in the last paragraph.
+ * The prompt asks for it, but gpt-4o still glues "Could you share your
+ * child's age?" to the end of an informative paragraph now and then, so we
+ * enforce it here: inside the LAST paragraph, if the first sentence that
+ * ends with "?" is not the paragraph's first sentence, break the paragraph
+ * right before that question. Everything from the question onward (including
+ * a trailing "That way I can..." explanation) becomes the final paragraph.
+ */
+export function isolateTrailingQuestion(text: string): string {
+  const paragraphs = text.split(/\n\s*\n/);
+  const last = paragraphs[paragraphs.length - 1];
+  if (!last || !last.includes('?')) return text;
+  // Sentence starts: whitespace after . ! ? followed by an uppercase letter,
+  // an opening Spanish mark, or a quote. URLs have no space after the dot.
+  const starts: number[] = [0];
+  const re = /(?<=[.!?])\s+(?=[A-ZÀ-ÝÁÉÍÓÚÑ¿¡"'(])/gu;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(last)) !== null) starts.push(m.index + m[0].length);
+  if (starts.length < 2) return text;
+  for (let i = 1; i < starts.length; i++) {
+    const sentence = last.slice(starts[i], starts[i + 1] ?? last.length).trim();
+    if (sentence.endsWith('?')) {
+      const head = last.slice(0, starts[i]).trimEnd();
+      const tail = last.slice(starts[i]).trim();
+      if (!head || !tail) return text;
+      paragraphs[paragraphs.length - 1] = `${head}\n\n${tail}`;
+      return paragraphs.join('\n\n');
+    }
+  }
+  return text;
+}
+
 function clipReply(raw: string): string {
-  const trimmed = sanitizeReply(raw);
+  const trimmed = isolateTrailingQuestion(sanitizeReply(raw));
   if (trimmed.length <= REPLY_HARD_MAX) return trimmed;
   const window = trimmed.slice(0, REPLY_HARD_MAX);
   // Prefer the last sentence-ending punctuation in the window.
