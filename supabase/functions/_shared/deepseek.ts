@@ -30,8 +30,28 @@ export interface ChatResult {
 // sentence boundary so we never send a message that ends mid-word.
 const REPLY_HARD_MAX = 800;
 
+/**
+ * Belt-and-suspenders typography sanitizer. The prompt forbids these, but a
+ * model slip must never reach a customer, so we strip them in code too.
+ *   em dash (U+2014) / en dash (U+2013) / horizontal bar (U+2015) -> ", "
+ *   every emoji / pictograph (plus skin tones, ZWJ sequences, variation
+ *   selectors)                                                      -> removed
+ * Also collapses the double spaces / dangling commas the replacement can leave.
+ */
+export function sanitizeReply(raw: string): string {
+  return raw
+    .replace(/\s*[—–―]\s*/g, ', ')
+    .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}]️?(‍[\p{Extended_Pictographic}]️?)*/gu, '')
+    .replace(/[️‍]/g, '')
+    .replace(/,\s*,/g, ',')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.!?])/g, '$1')
+    .replace(/,\s*$/gm, '.')
+    .trim();
+}
+
 function clipReply(raw: string): string {
-  const trimmed = raw.trim();
+  const trimmed = sanitizeReply(raw);
   if (trimmed.length <= REPLY_HARD_MAX) return trimmed;
   const window = trimmed.slice(0, REPLY_HARD_MAX);
   // Prefer the last sentence-ending punctuation in the window.
@@ -60,20 +80,38 @@ export async function chat(
   let lastContent: unknown = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const useJsonMode = attempt < MAX_ATTEMPTS;
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-chat',
-        messages: [{ role: 'system', content: systemPrompt }, ...messages],
-        ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
-        temperature: 0.4,
-        max_tokens: 600,
-      }),
-    });
+    // Hard timeout per attempt. DeepSeek has returned "unable to start
+    // processing within 900s" during load — we'd rather fail fast and let
+    // the owner reply manually than make the customer wait minutes.
+    const controller = new AbortController();
+    const timeoutMs = 25_000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-chat',
+          messages: [{ role: 'system', content: systemPrompt }, ...messages],
+          ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
+          temperature: 0.4,
+          max_tokens: 600,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const e = err as Error;
+      if (e.name === 'AbortError') {
+        throw new Error(`DeepSeek timeout after ${timeoutMs}ms (attempt ${attempt}/${MAX_ATTEMPTS})`);
+      }
+      throw err;
+    }
+    clearTimeout(timeoutId);
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');
@@ -96,7 +134,7 @@ export async function chat(
   throw new Error(`DeepSeek returned only whitespace after ${MAX_ATTEMPTS} attempts: ${JSON.stringify(lastContent)}`);
 }
 
-function parseModelOutput(content: string): ChatResult {
+export function parseModelOutput(content: string): ChatResult {
   // deno-lint-ignore no-explicit-any
   let parsed: any = null;
   try {

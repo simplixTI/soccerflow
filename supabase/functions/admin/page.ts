@@ -60,6 +60,11 @@ export const ADMIN_HTML = `<!DOCTYPE html>
       <input id="key" type="password" placeholder="Cole a senha aqui" autocomplete="off">
     </div>
 
+    <div class="card" id="balance-card">
+      <label>Saldo das APIs</label>
+      <div id="balance"><p class="hint">Informe a senha para ver.</p></div>
+    </div>
+
     <div class="card">
       <label for="category">Tipo de conhecimento</label>
       <select id="category">
@@ -88,7 +93,32 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     keyInput.addEventListener('change', () => {
       localStorage.setItem('sf_admin_key', keyInput.value);
       loadEntries();
+      loadBalance();
     });
+
+    async function loadBalance() {
+      const el = \$('balance');
+      if (!keyInput.value) return;
+      try {
+        const res = await fetch('./api/balance', { headers: headers() });
+        if (!res.ok) throw new Error('Senha incorreta');
+        const b = await res.json();
+        const rows = [];
+        if (b.deepseek && b.deepseek.total_balance != null) {
+          const usd = Number(b.deepseek.total_balance);
+          const color = usd < 1 ? '#e06c6c' : usd < 5 ? '#ffce73' : '#7dd89a';
+          rows.push('<p><b>DeepSeek</b>: <span style="color:' + color + '">$' + usd.toFixed(2) + ' USD</span>' +
+            (usd < 5 ? ' &nbsp;<small>recarregue em breve</small>' : '') + '</p>');
+        } else if (b.deepseek && b.deepseek.error) {
+          rows.push('<p><b>DeepSeek</b>: <span class="error">' + b.deepseek.error + '</span></p>');
+        }
+        rows.push('<p><b>OpenAI</b> (modelo principal): ' + (b.openai.configured ? 'chave configurada' : '<span class="error">chave NÃO configurada</span>') +
+          ' &nbsp;<a href="' + b.openai.dashboard_url + '" target="_blank" rel="noopener" style="color:#7dd89a">ver uso e saldo</a></p>');
+        el.innerHTML = rows.join('');
+      } catch (err) {
+        el.innerHTML = '<p class="hint error">' + err.message + '</p>';
+      }
+    }
 
     function headers() {
       return { 'Content-Type': 'application/json', 'x-admin-key': keyInput.value };
@@ -139,13 +169,19 @@ export const ADMIN_HTML = `<!DOCTYPE html>
         headers: headers(),
         body: JSON.stringify({ category: \$('category').value, text }),
       });
-      if (!res.ok) return status('Erro ao salvar — confira a senha', true);
+      if (!res.ok) return status('Erro ao salvar. Confira a senha', true);
+      const saved = await res.json().catch(() => ({}));
       \$('text').value = '';
-      status('Salvo! A IA já sabe disso ✓');
+      if (saved.indexError) {
+        status('Salvo, mas falhou ao indexar: ' + saved.indexError, true);
+      } else {
+        status('Salvo e indexado (' + (saved.chunks || 0) + ' trechos). A IA já sabe disso.');
+      }
       loadEntries();
     });
 
     loadEntries();
+    loadBalance();
   </script>
 </body>
 </html>

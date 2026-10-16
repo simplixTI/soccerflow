@@ -47,7 +47,11 @@ function db(): SupabaseClient {
   return client;
 }
 
-const MAX_HISTORY = 20;
+// How many past messages we keep per conversation. Advanced conversations
+// often run 30-50 turns before booking — cap too low = the bot loses the
+// beginning of the conversation and starts re-asking answered questions.
+// DeepSeek supports 64K tokens, so 60 messages (~15K chars) is well within budget.
+const MAX_HISTORY = 60;
 
 // deno-lint-ignore no-explicit-any
 function rowToLead(row: any): Lead {
@@ -168,6 +172,42 @@ export async function markLeadNotified(channel: string, phone: string): Promise<
   if (error) throw error;
 }
 
+// --- Customer opt-out (STOP keyword) ------------------------------------------
+
+/** True if the customer has explicitly opted out — bot must stay silent. */
+export async function isOptedOut(channel: string, phone: string): Promise<boolean> {
+  const { data, error } = await db()
+    .from('opt_outs')
+    .select('phone')
+    .eq('channel', channel)
+    .eq('phone', phone)
+    .maybeSingle();
+  if (error) throw error;
+  return !!data;
+}
+
+/** Persist opt-out. Idempotent — repeated STOPs don't error. */
+export async function setOptOut(
+  channel: string,
+  phone: string,
+  reason = 'customer_keyword',
+): Promise<void> {
+  const { error } = await db()
+    .from('opt_outs')
+    .upsert({ channel, phone, reason, at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+/** Owner-only: bring a customer back from opt-out. */
+export async function clearOptOut(channel: string, phone: string): Promise<void> {
+  const { error } = await db()
+    .from('opt_outs')
+    .delete()
+    .eq('channel', channel)
+    .eq('phone', phone);
+  if (error) throw error;
+}
+
 // --- Human takeover (/assumir + auto-takeover) ---------------------------------
 
 /** Owner takes over a conversation: the AI goes silent for this channel+phone. */
@@ -189,8 +229,8 @@ export async function clearTakeover(channel: string, phone: string): Promise<voi
 }
 
 function takeoverTtlMs(): number {
-  const hours = Number(Deno.env.get('TAKEOVER_TTL_HOURS') || '12');
-  return (Number.isFinite(hours) && hours > 0 ? hours : 12) * 60 * 60 * 1000;
+  const hours = Number(Deno.env.get('TAKEOVER_TTL_HOURS') || '4');
+  return (Number.isFinite(hours) && hours > 0 ? hours : 4) * 60 * 60 * 1000;
 }
 
 /**
@@ -257,9 +297,11 @@ const KB_CATEGORY_LABELS: Record<string, string> = {
   correction: 'CORRECTION / HOW TO HANDLE',
 };
 
-// DeepSeek chat supports ~64K input tokens (~200K chars); 80K leaves plenty of
-// room for base business.json, conversation history, and the current message.
-const MAX_KB_CHARS = 80000;
+// DeepSeek chat supports ~64K input tokens (~200K chars), but requests with
+// giant system prompts frequently time out when their API is under load.
+// 24K is enough for the owner's actual corrections + core business facts.
+// The category priority below ensures corrections stay in even when the KB grows.
+const MAX_KB_CHARS = 24000;
 
 // Higher-priority categories are packed first so they never get dropped when
 // the KB grows past MAX_KB_CHARS. Corrections override everything → they win.
@@ -271,10 +313,9 @@ const CATEGORY_PRIORITY: Record<string, number> = {
 };
 
 /**
- * Render the owner-fed knowledge entries as a prompt section.
- * Higher-priority categories come first; within a category, newest wins.
- * Entries that don't fit under MAX_KB_CHARS are skipped (not a hard stop —
- * a smaller lower-priority entry after a huge one can still fit).
+ * LEGACY path (kept as a safety net): dumps the whole KB into the prompt,
+ * priority-sorted, capped at MAX_KB_CHARS. Used only when the vector-search
+ * RAG path throws (OpenAI down, pgvector missing, etc.).
  */
 export async function getKbPromptSection(): Promise<string> {
   const kb = await listKb();
@@ -283,7 +324,6 @@ export async function getKbPromptSection(): Promise<string> {
     const pa = CATEGORY_PRIORITY[a.category] ?? 99;
     const pb = CATEGORY_PRIORITY[b.category] ?? 99;
     if (pa !== pb) return pa - pb;
-    // Same category: newest first (createdAt desc).
     return (b.createdAt || '').localeCompare(a.createdAt || '');
   });
   const parts: string[] = [];
@@ -296,4 +336,90 @@ export async function getKbPromptSection(): Promise<string> {
     used += line.length;
   }
   return parts.join('').trim();
+}
+
+// --- RAG: vector-search retrieval over kb_chunks ------------------------------
+
+export interface KbChunkMatch {
+  id: number;
+  entry_id: string;
+  category: string;
+  text: string;
+  similarity: number;
+}
+
+/**
+ * Retrieve the top chunks most relevant to the query embedding.
+ * Hits the `match_kb_chunks` SQL RPC installed by the kb_rag migration.
+ *
+ * We EXCLUDE `style` and `correction` categories from vector search — those
+ * are policies that must always apply regardless of what the customer asked,
+ * so they're loaded separately via `getPolicyChunks()`.
+ */
+export async function matchKbChunks(
+  queryEmbedding: number[],
+  { count = 8, minSimilarity = 0.25 }: { count?: number; minSimilarity?: number } = {},
+): Promise<KbChunkMatch[]> {
+  const { data, error } = await db().rpc('match_kb_chunks', {
+    query_embedding: queryEmbedding,
+    match_count: count,
+    min_similarity: minSimilarity,
+  });
+  if (error) throw error;
+  const all = (data as KbChunkMatch[]) || [];
+  // Drop policy categories — they're injected unconditionally elsewhere.
+  return all.filter((c) => c.category !== 'style' && c.category !== 'correction');
+}
+
+/**
+ * Pull ALL chunks in policy categories (style, correction). These are the
+ * owner's overrides and tone rules — they must apply to every reply, not
+ * depend on whether the customer's current message happens to match them.
+ */
+export async function getPolicyChunks(): Promise<KbChunkMatch[]> {
+  const { data, error } = await db()
+    .from('kb_chunks')
+    .select('id, entry_id, category, text')
+    .in('category', ['correction', 'style'])
+    .order('chunk_index', { ascending: true });
+  if (error) throw error;
+  // similarity isn't computed here (they're always-included); use 1.0 as a flag.
+  return (data as Omit<KbChunkMatch, 'similarity'>[]).map((c) => ({ ...c, similarity: 1 }));
+}
+
+/**
+ * Render a set of retrieved chunks as the KB prompt section.
+ * Groups by entry+category so the LLM sees coherent chunks, not isolated snippets.
+ */
+export function renderChunks(matches: KbChunkMatch[]): string {
+  if (!matches.length) return '';
+  // Sort by category priority first (corrections win when the prompt is tight),
+  // then by similarity so the strongest match in each category comes first.
+  const sorted = [...matches].sort((a, b) => {
+    const pa = CATEGORY_PRIORITY[a.category] ?? 99;
+    const pb = CATEGORY_PRIORITY[b.category] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return b.similarity - a.similarity;
+  });
+  return sorted
+    .map((m) => `- [${KB_CATEGORY_LABELS[m.category] || 'NOTE'}] ${m.text}`)
+    .join('\n');
+}
+
+/** Insert one chunk + its embedding. Used by the backfill script. */
+export async function insertKbChunk(row: {
+  entry_id: string;
+  category: string;
+  text: string;
+  chunk_index: number;
+  embedding: number[];
+}): Promise<void> {
+  const { error } = await db().from('kb_chunks').insert(row);
+  if (error) throw error;
+}
+
+/** Drop every chunk for an entry (used before re-indexing). */
+export async function deleteKbChunksForEntry(entryId: string): Promise<void> {
+  const { error } = await db().from('kb_chunks').delete().eq('entry_id', entryId);
+  if (error) throw error;
 }

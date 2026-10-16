@@ -51,9 +51,28 @@ export function parseIncoming(body: any): IncomingMessage | null {
   if (msg.isGroup || body.isGroup) return null;
 
   // Defensive: if uazapi echoes our own API-sent messages back, ignore them.
-  // (The uazapi instance is also expected to exclude `wasSentByApi` events.)
-  const wasSentByApi = msg.wasSentByApi ?? body.wasSentByApi ?? msg.data?.wasSentByApi;
-  if (wasSentByApi === true) return null;
+  // (The uazapi instance SHOULD also be configured to exclude `wasSentByApi`
+  // events, but we belt-and-suspenders every signal we can see.)
+  // Any ONE of these means "this came from an API call we made":
+  //   - wasSentByApi flag true (standard uazapi field)
+  //   - sendFunction present (sendtext/sendmedia/… — only set by API senders)
+  //   - sendPayload present   (the API request body uazapi echoes back)
+  //   - source === 'api'      (some payload shapes)
+  const wasSentByApi =
+    msg.wasSentByApi === true || body.wasSentByApi === true || msg.data?.wasSentByApi === true;
+  const hasSendFn = !!(msg.sendFunction || body.sendFunction || msg.data?.sendFunction);
+  const hasSendPayload = !!(msg.sendPayload || body.sendPayload || msg.data?.sendPayload);
+  const sourceIsApi = String(msg.source || body.source || '').toLowerCase() === 'api';
+  if (wasSentByApi || hasSendFn || hasSendPayload || sourceIsApi) return null;
+
+  // Ignore reactions (thumbs-up, ❤️, etc. that customers tap on prior messages).
+  // These are not new questions — they're acknowledgements. Replying to them
+  // feels robotic and often re-opens a conversation the team already closed.
+  const messageType = String(msg.messageType || msg.type || body.messageType || '').toLowerCase();
+  if (messageType.includes('reaction')) return null;
+  const reactionField = msg.reaction ?? body.reaction ?? msg.message?.reactionMessage;
+  if (reactionField && typeof reactionField === 'object') return null;
+  if (typeof reactionField === 'string' && reactionField.trim() && !msg.text && !msg.body) return null;
 
   const fromMe = Boolean(msg.fromMe ?? msg.key?.fromMe ?? body.fromMe);
 
